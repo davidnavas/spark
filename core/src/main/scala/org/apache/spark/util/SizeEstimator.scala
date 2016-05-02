@@ -397,5 +397,9 @@ class SizeEstimator extends Logging {
 }
 
 object SizeEstimator extends SizeEstimator {
+  // For testing only
+  private def initialize(): Unit = {
+    super.initialize()
+  }
 }
 
