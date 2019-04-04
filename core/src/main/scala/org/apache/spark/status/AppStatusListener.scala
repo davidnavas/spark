@@ -931,6 +931,7 @@ private[spark] class AppStatusListener(
       val countToDelete = calculateNumberToRemove(dead, threshold)
       val toDelete = kvstore.view(classOf[ExecutorSummaryWrapper]).index("active")
         .max(countToDelete).first(false).last(false).asScala.toSeq
+      logDebug(s"Cleaning executors ${toDelete.size} should be $countToDelete for total $count")
       toDelete.foreach { e => kvstore.delete(e.getClass(), e.info.id) }
     }
   }
@@ -945,6 +946,7 @@ private[spark] class AppStatusListener(
     val toDelete = KVUtils.viewToSeq(view, countToDelete.toInt) { j =>
       j.info.status != JobExecutionStatus.RUNNING && j.info.status != JobExecutionStatus.UNKNOWN
     }
+    logDebug(s"Cleaning jobs ${toDelete.size} for total count $count")
     toDelete.foreach { j => kvstore.delete(j.getClass(), j.info.jobId) }
   }
 
@@ -962,6 +964,7 @@ private[spark] class AppStatusListener(
       s.info.status != v1.StageStatus.ACTIVE && s.info.status != v1.StageStatus.PENDING
     }
 
+    logDebug(s"Cleanup stages ${stages.size} for total count of $count")
     stages.foreach { s =>
       val key = Array(s.info.stageId, s.info.attemptId)
       kvstore.delete(s.getClass(), key)
@@ -972,6 +975,9 @@ private[spark] class AppStatusListener(
         .last(key)
         .asScala
         .toSeq
+
+      logDebug(
+        s"Cleaning stage ${s.info.stageId}:${s.info.attemptId} w/ summaries ${execSummaries.size}")
       execSummaries.foreach { e =>
         kvstore.delete(e.getClass(), e.id)
       }
@@ -993,6 +999,7 @@ private[spark] class AppStatusListener(
       }
 
       if (!hasMoreAttempts) {
+        logDebug(s"Deleted stage ${s.info.stageId}")
         kvstore.delete(classOf[RDDOperationGraphWrapper], s.info.stageId)
       }
 
