@@ -25,6 +25,7 @@ import scala.collection.mutable.{HashMap, ListBuffer}
 import com.google.common.util.concurrent.MoreExecutors
 
 import org.apache.spark.SparkConf
+import org.apache.spark.status.ElementTrackingStore.{WriteQueueResult, WriteSkippedQueue}
 import org.apache.spark.util.{ThreadUtils, Utils}
 import org.apache.spark.util.kvstore._
 
@@ -51,13 +52,15 @@ private[spark] class ElementTrackingStore(store: KVStore, conf: SparkConf) exten
   private class LatchedTriggers(val triggers: Seq[Trigger[_]]) {
     val countDeferred = new AtomicInteger(0)
 
-    def fireOnce(f: Seq[Trigger[_]] => Unit): Unit = {
-      if (countDeferred.compareAndSet(0, 1)) {
+    def fireOnce(f: Seq[Trigger[_]] => Unit): Boolean = {
+      val shouldExecute = countDeferred.compareAndSet(0, 1)
+      if (shouldExecute) {
         doAsync {
           countDeferred.set(0)
           f(triggers)
         }
       }
+      shouldExecute
     }
 
     def :+(addlTrigger: Trigger[_]): LatchedTriggers = {
@@ -120,12 +123,12 @@ private[spark] class ElementTrackingStore(store: KVStore, conf: SparkConf) exten
   override def write(value: Any): Unit = store.write(value)
 
   /** Write an element to the store, optionally checking for whether to fire triggers. */
-  def write(value: Any, checkTriggers: Boolean): Unit = {
+  def write(value: Any, checkTriggers: Boolean): WriteQueueResult = {
     write(value)
 
     if (checkTriggers && !stopped) {
-      triggers.get(value.getClass()).foreach { latchedList =>
-        latchedList.fireOnce { list =>
+      triggers.get(value.getClass()).map { latchedList =>
+        WriteQueueResult(latchedList.fireOnce { list =>
           doAsync {
             val count = store.count(value.getClass())
             list.foreach { t =>
@@ -134,8 +137,10 @@ private[spark] class ElementTrackingStore(store: KVStore, conf: SparkConf) exten
               }
             }
           }
-        }
-      }
+        })
+      }.getOrElse(WriteSkippedQueue)
+    } else {
+      WriteSkippedQueue
     }
   }
 
@@ -182,4 +187,24 @@ private[spark] class ElementTrackingStore(store: KVStore, conf: SparkConf) exten
       threshold: Long,
       action: Long => Unit)
 
+}
+
+private[spark] object ElementTrackingStore {
+  /**
+   * This trait is solely to assist testing the correctness of single-fire execution
+   * The result of write() is otherwise unused.
+   */
+  sealed trait WriteQueueResult
+  object WriteQueueResult {
+    def apply(b: Boolean): WriteQueueResult = {
+      if (b) {
+        WriteQueued
+      } else {
+        WriteSkippedQueue
+      }
+    }
+  }
+
+  object WriteQueued extends WriteQueueResult
+  object WriteSkippedQueue extends WriteQueueResult
 }
