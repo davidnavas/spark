@@ -18,6 +18,7 @@
 package org.apache.spark.status
 
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 import scala.collection.mutable.{HashMap, ListBuffer}
 
@@ -47,7 +48,24 @@ private[spark] class ElementTrackingStore(store: KVStore, conf: SparkConf) exten
 
   import config._
 
-  private val triggers = new HashMap[Class[_], Seq[Trigger[_]]]()
+  private class LatchedTriggers(val triggers: Seq[Trigger[_]]) {
+    val countDeferred = new AtomicInteger(0)
+
+    def fireOnce(f: Seq[Trigger[_]] => Unit): Unit = {
+      if (countDeferred.compareAndSet(0, 1)) {
+        doAsync {
+          countDeferred.set(0)
+          f(triggers)
+        }
+      }
+    }
+
+    def :+(addlTrigger: Trigger[_]): LatchedTriggers = {
+      new LatchedTriggers(triggers :+ addlTrigger)
+    }
+  }
+
+  private val triggers = new HashMap[Class[_], LatchedTriggers]()
   private val flushTriggers = new ListBuffer[() => Unit]()
   private val executor = if (conf.get(ASYNC_TRACKING_ENABLED)) {
     ThreadUtils.newDaemonSingleThreadExecutor("element-tracking-store-worker")
@@ -67,8 +85,13 @@ private[spark] class ElementTrackingStore(store: KVStore, conf: SparkConf) exten
    *               of elements of the registered type currently known to be in the store.
    */
   def addTrigger(klass: Class[_], threshold: Long)(action: Long => Unit): Unit = {
-    val existing = triggers.getOrElse(klass, Seq())
-    triggers(klass) = existing :+ Trigger(threshold, action)
+    val newTrigger = Trigger(threshold, action)
+    triggers.get(klass) match {
+      case None =>
+        triggers(klass) = new LatchedTriggers(Seq(newTrigger))
+      case Some(latchedTrigger) =>
+        triggers(klass) = latchedTrigger :+ newTrigger
+    }
   }
 
   /**
@@ -101,12 +124,14 @@ private[spark] class ElementTrackingStore(store: KVStore, conf: SparkConf) exten
     write(value)
 
     if (checkTriggers && !stopped) {
-      triggers.get(value.getClass()).foreach { list =>
-        doAsync {
-          val count = store.count(value.getClass())
-          list.foreach { t =>
-            if (count > t.threshold) {
-              t.action(count)
+      triggers.get(value.getClass()).foreach { latchedList =>
+        latchedList.fireOnce { list =>
+          doAsync {
+            val count = store.count(value.getClass())
+            list.foreach { t =>
+              if (count > t.threshold) {
+                t.action(count)
+              }
             }
           }
         }
