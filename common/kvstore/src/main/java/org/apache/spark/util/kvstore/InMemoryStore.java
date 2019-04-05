@@ -201,16 +201,25 @@ public class InMemoryStore implements KVStore {
         int modifier = ascending ? 1 : -1;
 
         final List<T> sorted = copyElements();
-        LOG.info("Sorting InMemoryView of item count: " + sorted.size());
-        Collections.sort(sorted, (e1, e2) -> modifier * compare(e1, e2, getter));
-        Stream<T> stream = sorted.stream();
 
-        if (first != null) {
-          stream = stream.filter(e -> modifier * compare(e, getter, first) >= 0);
-        }
+        Stream<T> stream = null;
+        if (first != null && last != null && asKey(first).compareTo(asKey(last)) == 0) {
+          // first is last, so we just want to filter the key, and don't care about sorting!
+          // This is the normal case for stage deletion -- there's no reason to sort a million
+          // summaries to pull one stage's keys on completion of a stage.
+          stream = sorted.stream().filter(e -> modifier * compare(e, getter, first) == 0);
+        } else {
+          LOG.info("Sorting InMemoryView of item count: " + sorted.size());
+          Collections.sort(sorted, (e1, e2) -> modifier * compare(e1, e2, getter));
+          stream = sorted.stream();
 
-        if (last != null) {
-          stream = stream.filter(e -> modifier * compare(e, getter, last) <= 0);
+          if (first != null) {
+            stream = stream.filter(e -> modifier * compare(e, getter, first) >= 0);
+          }
+
+          if (last != null) {
+            stream = stream.filter(e -> modifier * compare(e, getter, last) <= 0);
+          }
         }
 
         if (skip > 0) {
