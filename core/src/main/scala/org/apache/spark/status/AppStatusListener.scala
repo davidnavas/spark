@@ -557,15 +557,6 @@ private[spark] class AppStatusListener(
       val now = System.nanoTime()
       stage.info = event.stageInfo
 
-      // Because of SPARK-20205, old event logs may contain valid stages without a submission time
-      // in their start event. In those cases, we can only detect whether a stage was skipped by
-      // waiting until the completion event, at which point the field would have been set.
-      stage.status = event.stageInfo.failureReason match {
-        case Some(_) => v1.StageStatus.FAILED
-        case _ if event.stageInfo.submissionTime.isDefined => v1.StageStatus.COMPLETE
-        case _ => v1.StageStatus.SKIPPED
-      }
-
       stage.jobs.foreach { job =>
         stage.status match {
           case v1.StageStatus.COMPLETE =>
@@ -586,6 +577,18 @@ private[spark] class AppStatusListener(
       }
 
       stage.executorSummaries.values.foreach(update(_, now))
+
+      // We have to update the stage status AFTER we create all the executorSummaries
+      // because stage deletion deletes whatever summaries it finds when the status is completed.
+
+      // Because of SPARK-20205, old event logs may contain valid stages without a submission time
+      // in their start event. In those cases, we can only detect whether a stage was skipped by
+      // waiting until the completion event, at which point the field would have been set.
+      stage.status = event.stageInfo.failureReason match {
+        case Some(_) => v1.StageStatus.FAILED
+        case _ if event.stageInfo.submissionTime.isDefined => v1.StageStatus.COMPLETE
+        case _ => v1.StageStatus.SKIPPED
+      }
 
       // Remove stage only if there are no active tasks remaining
       val removeStage = stage.activeTasks == 0
