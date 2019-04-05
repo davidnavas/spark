@@ -129,12 +129,10 @@ private[spark] class ElementTrackingStore(store: KVStore, conf: SparkConf) exten
     if (checkTriggers && !stopped) {
       triggers.get(value.getClass()).map { latchedList =>
         WriteQueueResult(latchedList.fireOnce { list =>
-          doAsync {
-            val count = store.count(value.getClass())
-            list.foreach { t =>
-              if (count > t.threshold) {
-                t.action(count)
-              }
+          val count = store.count(value.getClass())
+          list.foreach { t =>
+            if (count > t.threshold) {
+              t.action(count)
             }
           }
         })
