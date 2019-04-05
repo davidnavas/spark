@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -177,7 +178,7 @@ public class InMemoryStore implements KVStore {
   }
 
   private static class InMemoryView<T> extends KVStoreView<T> {
-
+    private static final Logger LOG = Logger.getLogger(InMemoryView.class.getName());
     private final Collection<T> elements;
     private final KVTypeInfo ti;
     private final KVTypeInfo.Accessor natural;
@@ -200,6 +201,7 @@ public class InMemoryStore implements KVStore {
         int modifier = ascending ? 1 : -1;
 
         final List<T> sorted = copyElements();
+        LOG.info("Sorting InMemoryView of item count: " + sorted.size());
         Collections.sort(sorted, (e1, e2) -> modifier * compare(e1, e2, getter));
         Stream<T> stream = sorted.stream();
 
