@@ -967,22 +967,12 @@ private[spark] class AppStatusListener(
     }
 
     logDebug(s"Cleanup stages ${stages.size} for total count of $count")
-    stages.foreach { s =>
+    def stageKey(stageId: Int, attemptId: Int): Long =
+      stageId.toLong << 32 | (attemptId.toLong & 0x00000000ffffffffL)
+
+    val stageKeys = stages.map { s =>
       val key = Array(s.info.stageId, s.info.attemptId)
       kvstore.delete(s.getClass(), key)
-
-      val execSummaries = kvstore.view(classOf[ExecutorStageSummaryWrapper])
-        .index("stage")
-        .first(key)
-        .last(key)
-        .asScala
-        .toSeq
-
-      logDebug(
-        s"Cleaning stage ${s.info.stageId}:${s.info.attemptId} w/ summaries ${execSummaries.size}")
-      execSummaries.foreach { e =>
-        kvstore.delete(e.getClass(), e.id)
-      }
 
       // Check whether there are remaining attempts for the same stage. If there aren't, then
       // also delete the RDD graph data.
@@ -1006,13 +996,29 @@ private[spark] class AppStatusListener(
       }
 
       cleanupCachedQuantiles(key)
+      stageKey(s.info.stageId, s.info.attemptId)
+    }.toSet
+
+    // We don't care about the index, so I use the easiest-to-sort index we have.  Ideally
+    // we'd be able to get an unsorted view, or even better, have a way to multiDelete based on
+    // partial identity match to a set of values, but for now, this avoids n^2 behavior, at least,
+    // and the nlogn behavior of the sort is as cheap as possible....
+    val execSummaries = kvstore.view(classOf[ExecutorStageSummaryWrapper]).asScala
+
+    val totalSummariesDeleted = execSummaries.foldLeft(0) { (sum, e) =>
+      if (stageKeys.contains(stageKey(e.stageId, e.stageAttemptId))) {
+        kvstore.delete(e.getClass(), e.id)
+        sum + 1
+      } else {
+        sum
+      }
     }
+    logDebug(s"Removed $totalSummariesDeleted summaries")
 
     // Delete tasks for all stages in one pass, as deleting them for each stage individually is slow
     val tasks = kvstore.view(classOf[TaskDataWrapper]).asScala
-    val keys = stages.map { s => (s.info.stageId, s.info.attemptId) }.toSet
     tasks.foreach { t =>
-      if (keys.contains((t.stageId, t.stageAttemptId))) {
+      if (stageKeys.contains(stageKey(t.stageId, t.stageAttemptId))) {
         kvstore.delete(t.getClass(), t.taskId)
       }
     }
