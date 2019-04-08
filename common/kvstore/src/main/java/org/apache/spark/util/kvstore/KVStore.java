@@ -130,22 +130,8 @@ public interface KVStore extends Closeable {
    */
   long count(Class<?> type, String index, Object indexedValue) throws Exception;
 
-  default <T> int countingRemoveIf(Class<T> type, Predicate<? super T> filter) throws Exception {
-    List<T> list = new ArrayList<T>();
-    Iterator<T> it = view(type).iterator();
-
-    while(it.hasNext()) {
-      T item = it.next();
-
-      if (filter.test(item)) {
-        list.add(it.next());
-      }
-    }
-
-    for (T item: list) {
-      delete(type, item);
-    }
-
-    return list.size();
-  }
+  /**
+   * A cheaper way to remove multiple items from the KVStore
+   */
+  abstract <T> int countingRemoveIf(Class<T> type, Predicate<? super T> filter) throws Exception;
 }

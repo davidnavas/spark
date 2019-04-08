@@ -19,13 +19,12 @@ package org.apache.spark.util.kvstore;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.NoSuchElementException;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
+
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -198,6 +197,29 @@ public class LevelDB implements KVStore {
         }
       }
     };
+  }
+
+  @Override
+  public <T> int countingRemoveIf(Class<T> type, Predicate<? super T> filter) throws Exception {
+    LevelDBTypeInfo.Index naturalIndex = getTypeInfo(type).naturalIndex();
+
+    List<T> list = new ArrayList<T>();
+    Iterator<T> it = view(type).iterator();
+
+    while(it.hasNext()) {
+      T item = it.next();
+
+      if (filter.test(item)) {
+        list.add(item);
+      }
+    }
+
+    for (T item: list) {
+      Object key = naturalIndex.getValue(item);
+      delete(type, key);
+    }
+
+    return list.size();
   }
 
   @Override

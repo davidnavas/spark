@@ -154,6 +154,10 @@ private[spark] class ElementTrackingStore(store: KVStore, conf: SparkConf) exten
     )
   }
 
+  override def countingRemoveIf[T](klass: Class[T], filter: Predicate[_ >: T]): Int =
+    store.countingRemoveIf[T](klass, filter)
+
+
   override def delete(klass: Class[_], naturalKey: Any): Unit = store.delete(klass, naturalKey)
 
   override def getMetadata[T](klass: Class[T]): T = store.getMetadata(klass)
