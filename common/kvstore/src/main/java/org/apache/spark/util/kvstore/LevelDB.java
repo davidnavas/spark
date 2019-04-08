@@ -203,16 +203,12 @@ public class LevelDB implements KVStore {
   public <T> int countingRemoveIf(Class<T> type, Predicate<? super T> filter) throws Exception {
     LevelDBTypeInfo.Index naturalIndex = getTypeInfo(type).naturalIndex();
 
-    List<T> list = new ArrayList<T>();
-    Iterator<T> it = view(type).iterator();
-
-    while(it.hasNext()) {
-      T item = it.next();
-
+    List<T> list = new ArrayList<>();
+    view(type).forEach((item) ->  {
       if (filter.test(item)) {
         list.add(item);
       }
-    }
+    });
 
     for (T item: list) {
       Object key = naturalIndex.getValue(item);
