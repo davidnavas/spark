@@ -18,6 +18,10 @@
 package org.apache.spark.util.kvstore;
 
 import java.io.Closeable;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.function.Predicate;
 
 import org.apache.spark.annotation.Private;
 
@@ -126,4 +130,22 @@ public interface KVStore extends Closeable {
    */
   long count(Class<?> type, String index, Object indexedValue) throws Exception;
 
+  default <T> int countingRemoveIf(Class<T> type, Predicate<? super T> filter) throws Exception {
+    List<T> list = new ArrayList<T>();
+    Iterator<T> it = view(type).iterator();
+
+    while(it.hasNext()) {
+      T item = it.next();
+
+      if (filter.test(item)) {
+        list.add(it.next());
+      }
+    }
+
+    for (T item: list) {
+      delete(type, item);
+    }
+
+    return list.size();
+  }
 }

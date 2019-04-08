@@ -19,6 +19,7 @@ package org.apache.spark.status
 
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.function.Predicate
 
 import scala.collection.mutable.{HashMap, ListBuffer}
 
@@ -140,6 +141,17 @@ private[spark] class ElementTrackingStore(store: KVStore, conf: SparkConf) exten
     } else {
       WriteSkippedQueue
     }
+  }
+
+  def countingRemoveIf[T](klass: Class[T], filter: T => Boolean): Int = {
+    store.countingRemoveIf(
+      klass,
+      new Predicate[T]() {
+        def test(t: T): Boolean = {
+          filter(t)
+        }
+      }
+    )
   }
 
   override def delete(klass: Class[_], naturalKey: Any): Unit = store.delete(klass, naturalKey)
