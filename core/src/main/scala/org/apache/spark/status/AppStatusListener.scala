@@ -1175,25 +1175,20 @@ private[spark] class AppStatusListener(
       stageKey(s.info.stageId, s.info.attemptId)
     }.toSet
 
-    // We don't care about the index, so I use the easiest-to-sort index we have.  Ideally
-    // we'd be able to get an unsorted view, or even better, have a way to multiDelete based on
-    // partial identity match to a set of values, but for now, this avoids n^2 behavior, at least,
-    // and the nlogn behavior of the sort is as cheap as possible....
-    val execSummaries = kvstore.view(classOf[ExecutorStageSummaryWrapper]).asScala
+    // Delete summaries in one pass, as deleting them for each stage is slow
+    kvstore.removeIf(
+      classOf[ExecutorStageSummaryWrapper],
+      { e: ExecutorStageSummaryWrapper =>
+        stageKeys.contains(stageKey(e.stageId, e.stageAttemptId))
+      })
 
-    execSummaries.foreach { e =>
-      if (stageKeys.contains(stageKey(e.stageId, e.stageAttemptId))) {
-        kvstore.delete(e.getClass(), e.id)
-      }
-    }
 
     // Delete tasks for all stages in one pass, as deleting them for each stage individually is slow
-    val tasks = kvstore.view(classOf[TaskDataWrapper]).asScala
-    tasks.foreach { t =>
-      if (stageKeys.contains(stageKey(t.stageId, t.stageAttemptId))) {
-        kvstore.delete(t.getClass(), t.taskId)
-      }
-    }
+    kvstore.removeIf(
+      classOf[TaskDataWrapper],
+      { t: TaskDataWrapper =>
+        stageKeys.contains(stageKey(t.stageId, t.stageAttemptId))
+      })
   }
 
   private def cleanupTasks(stage: LiveStage): Unit = {

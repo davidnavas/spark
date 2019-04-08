@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -118,6 +119,16 @@ public class InMemoryStore implements KVStore {
     data.clear();
   }
 
+  @Override
+  public <T> boolean removeIf(Class<T> type, Predicate<? super T> filter) {
+    InstanceList list = data.get(type);
+
+    if (list != null) {
+      return list.countingRemoveIf(filter) > 0;
+    }
+    return false;
+  }
+
   @SuppressWarnings("unchecked")
   private static Comparable<Object> asKey(Object in) {
     if (in.getClass().isArray()) {
@@ -140,6 +151,24 @@ public class InMemoryStore implements KVStore {
 
     KVTypeInfo.Accessor getIndexAccessor(String indexName) {
       return ti.getAccessor(indexName);
+    }
+
+    // Note: removeIf returns a boolean if any element has been removed.
+    // While debugging this code, it was handy to have the count of elements
+    // removed, rather than an indicator of whether something has been
+    // removed, and a count is no more complicated than a boolean so I've
+    // retained that behavior here, although there is no current requirement.
+    <T> int countingRemoveIf(Predicate<? super T> filter) {
+      Iterator<T> each = (Iterator<T>)data.values().iterator();
+      int count = 0;
+
+      while (each.hasNext()) {
+        if (filter.test(each.next())) {
+          each.remove();
+          count += 1;
+        }
+      }
+      return count;
     }
 
     public Object get(Object key) {
