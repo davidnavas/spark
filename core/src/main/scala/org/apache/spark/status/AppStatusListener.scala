@@ -999,10 +999,7 @@ private[spark] class AppStatusListener(
       stageKey(s.info.stageId, s.info.attemptId)
     }.toSet
 
-    // We don't care about the index, so I use the easiest-to-sort index we have.  Ideally
-    // we'd be able to get an unsorted view, or even better, have a way to multiDelete based on
-    // partial identity match to a set of values, but for now, this avoids n^2 behavior, at least,
-    // and the nlogn behavior of the sort is as cheap as possible....
+    // Delete summaries in one pass, as deleting them for each stage is slow
     val totalSummariesDeleted = kvstore.countingRemoveIf(
       classOf[ExecutorStageSummaryWrapper],
       { e: ExecutorStageSummaryWrapper =>
