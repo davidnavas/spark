@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -118,6 +119,16 @@ public class InMemoryStore implements KVStore {
     data.clear();
   }
 
+  @Override
+  public <T> int countingRemoveIf(Class<T> type, Predicate<? super T> filter) {
+    InstanceList list = data.get(type);
+
+    if (list != null) {
+      return list.countingRemoveIf(filter);
+    }
+    return 0;
+  }
+
   @SuppressWarnings("unchecked")
   private static Comparable<Object> asKey(Object in) {
     if (in.getClass().isArray()) {
@@ -143,6 +154,19 @@ public class InMemoryStore implements KVStore {
 
     KVTypeInfo.Accessor getIndexAccessor(String indexName) {
       return ti.getAccessor(indexName);
+    }
+
+    <T> int countingRemoveIf(Predicate<? super T> filter) {
+      Iterator<T> each = (Iterator<T>)data.values().iterator();
+      int count = 0;
+
+      while (each.hasNext()) {
+        if (filter.test(each.next())) {
+          each.remove();
+          count += 1;
+        }
+      }
+      return count;
     }
 
     public Object get(Object key) {
@@ -177,7 +201,6 @@ public class InMemoryStore implements KVStore {
   }
 
   private static class InMemoryView<T> extends KVStoreView<T> {
-
     private final Collection<T> elements;
     private final KVTypeInfo ti;
     private final KVTypeInfo.Accessor natural;

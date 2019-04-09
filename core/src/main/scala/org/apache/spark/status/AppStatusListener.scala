@@ -557,6 +557,10 @@ private[spark] class AppStatusListener(
       val now = System.nanoTime()
       stage.info = event.stageInfo
 
+      // We have to update the stage status AFTER we create all the executorSummaries
+      // because stage deletion deletes whatever summaries it finds when the status is completed.
+      stage.executorSummaries.values.foreach(update(_, now))
+
       // Because of SPARK-20205, old event logs may contain valid stages without a submission time
       // in their start event. In those cases, we can only detect whether a stage was skipped by
       // waiting until the completion event, at which point the field would have been set.
@@ -584,8 +588,6 @@ private[spark] class AppStatusListener(
         pool.stageIds = pool.stageIds - event.stageInfo.stageId
         update(pool, now)
       }
-
-      stage.executorSummaries.values.foreach(update(_, now))
 
       // Remove stage only if there are no active tasks remaining
       val removeStage = stage.activeTasks == 0
@@ -931,6 +933,7 @@ private[spark] class AppStatusListener(
       val countToDelete = calculateNumberToRemove(dead, threshold)
       val toDelete = kvstore.view(classOf[ExecutorSummaryWrapper]).index("active")
         .max(countToDelete).first(false).last(false).asScala.toSeq
+      logDebug(s"Cleaning executors ${toDelete.size} should be $countToDelete for total $count")
       toDelete.foreach { e => kvstore.delete(e.getClass(), e.info.id) }
     }
   }
@@ -945,6 +948,7 @@ private[spark] class AppStatusListener(
     val toDelete = KVUtils.viewToSeq(view, countToDelete.toInt) { j =>
       j.info.status != JobExecutionStatus.RUNNING && j.info.status != JobExecutionStatus.UNKNOWN
     }
+    logDebug(s"Cleaning jobs ${toDelete.size} for total count $count")
     toDelete.foreach { j => kvstore.delete(j.getClass(), j.info.jobId) }
   }
 
@@ -962,19 +966,13 @@ private[spark] class AppStatusListener(
       s.info.status != v1.StageStatus.ACTIVE && s.info.status != v1.StageStatus.PENDING
     }
 
-    stages.foreach { s =>
+    logDebug(s"Cleanup stages ${stages.size} for total count of $count")
+    def stageKey(stageId: Int, attemptId: Int): Long =
+      stageId.toLong << 32 | (attemptId.toLong & 0x00000000ffffffffL)
+
+    val stageKeys = stages.map { s =>
       val key = Array(s.info.stageId, s.info.attemptId)
       kvstore.delete(s.getClass(), key)
-
-      val execSummaries = kvstore.view(classOf[ExecutorStageSummaryWrapper])
-        .index("stage")
-        .first(key)
-        .last(key)
-        .asScala
-        .toSeq
-      execSummaries.foreach { e =>
-        kvstore.delete(e.getClass(), e.id)
-      }
 
       // Check whether there are remaining attempts for the same stage. If there aren't, then
       // also delete the RDD graph data.
@@ -993,20 +991,29 @@ private[spark] class AppStatusListener(
       }
 
       if (!hasMoreAttempts) {
+        logDebug(s"Deleted stage ${s.info.stageId}")
         kvstore.delete(classOf[RDDOperationGraphWrapper], s.info.stageId)
       }
 
       cleanupCachedQuantiles(key)
-    }
+      stageKey(s.info.stageId, s.info.attemptId)
+    }.toSet
+
+    // Delete summaries in one pass, as deleting them for each stage is slow
+    val totalSummariesDeleted = kvstore.countingRemoveIf(
+      classOf[ExecutorStageSummaryWrapper],
+      { e: ExecutorStageSummaryWrapper =>
+        stageKeys.contains(stageKey(e.stageId, e.stageAttemptId))
+      })
+
+    logDebug(s"Removed $totalSummariesDeleted summaries")
 
     // Delete tasks for all stages in one pass, as deleting them for each stage individually is slow
-    val tasks = kvstore.view(classOf[TaskDataWrapper]).asScala
-    val keys = stages.map { s => (s.info.stageId, s.info.attemptId) }.toSet
-    tasks.foreach { t =>
-      if (keys.contains((t.stageId, t.stageAttemptId))) {
-        kvstore.delete(t.getClass(), t.taskId)
-      }
-    }
+    kvstore.countingRemoveIf(
+      classOf[TaskDataWrapper],
+      { t: TaskDataWrapper =>
+        stageKeys.contains(stageKey(t.stageId, t.stageAttemptId))
+      })
   }
 
   private def cleanupTasks(stage: LiveStage): Unit = {
