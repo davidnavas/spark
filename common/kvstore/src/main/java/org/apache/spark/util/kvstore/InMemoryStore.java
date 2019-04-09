@@ -22,6 +22,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -143,13 +144,10 @@ public class InMemoryStore implements KVStore {
     private final KVTypeInfo.Accessor naturalKey;
     private final ConcurrentMap<Comparable<Object>, Object> data;
 
-    private int size;
-
     private InstanceList(Class<?> type) throws Exception {
       this.ti = new KVTypeInfo(type);
       this.naturalKey = ti.getAccessor(KVIndex.NATURAL_INDEX_NAME);
       this.data = new ConcurrentHashMap<>();
-      this.size = 0;
     }
 
     KVTypeInfo.Accessor getIndexAccessor(String indexName) {
@@ -157,13 +155,21 @@ public class InMemoryStore implements KVStore {
     }
 
     <T> int countingRemoveIf(Predicate<? super T> filter) {
-      Iterator<T> each = (Iterator<T>)data.values().iterator();
+      Iterator<Map.Entry<Comparable<Object>, Object>> each = data.entrySet().iterator();
       int count = 0;
 
+      // To address https://bugs.openjdk.java.net/brows/JDK-8078645 which affects remove() on all
+      // iterators of concurrent maps, and specifically makes countingRemoveIf difficult to
+      // implement correctly, we iterate on the entries and call the conditional remove....
       while (each.hasNext()) {
-        if (filter.test(each.next())) {
-          each.remove();
-          count += 1;
+        Map.Entry<Comparable<Object>, Object> entry = each.next();
+        Comparable<Object> key = entry.getKey();
+        T val = (T)entry.getValue();
+
+        if (filter.test(val)) {
+          if (data.remove(key, val)) {
+            count += 1;
+          }
         }
       }
       return count;
@@ -176,19 +182,15 @@ public class InMemoryStore implements KVStore {
     public void put(Object value) throws Exception {
       Preconditions.checkArgument(ti.type().equals(value.getClass()),
         "Unexpected type: %s", value.getClass());
-      if (data.put(asKey(naturalKey.get(value)), value) == null) {
-        size++;
-      }
+      data.put(asKey(naturalKey.get(value)), value);
     }
 
     public void delete(Object key) {
-      if (data.remove(asKey(key)) != null) {
-        size--;
-      }
+      data.remove(asKey(key));
     }
 
     public int size() {
-      return size;
+      return data.size();
     }
 
     @SuppressWarnings("unchecked")
