@@ -142,11 +142,9 @@ class ElementTrackingStorePerfSuite extends SparkFunSuite {
 
           tracking.view(classOf[ExecutorStageSummaryWrapper])
             .index("stage")
+            .first(key)
+            .last(key)
             .asScala
-            .toSeq
-            .filter { e =>
-              e.stageId == s.info.stageId && e.stageAttemptId == s.info.attemptId
-            }
             .foreach { e =>
               tracking.delete(e.getClass(), e.id)
             }
@@ -155,7 +153,7 @@ class ElementTrackingStorePerfSuite extends SparkFunSuite {
     }
   }
 
-  test("slowspeed n^2") {
+  test("slightly faster n^2[logn]") {
     setup { tracking =>
       perfTest(tracking) {
         val stages = tracking.view(classOf[StageDataWrapper]).asScala
@@ -166,11 +164,10 @@ class ElementTrackingStorePerfSuite extends SparkFunSuite {
           tracking.delete(s.getClass, key)
 
           tracking.view(classOf[ExecutorStageSummaryWrapper])
-            .index("stage")
-            .first(key)
-            .last(key)
             .asScala
-            .toSeq
+            .filter { e =>
+              e.stageId == s.info.stageId && e.stageAttemptId == s.info.attemptId
+            }
             .foreach { e =>
               tracking.delete(e.getClass(), e.id)
             }
@@ -197,7 +194,6 @@ class ElementTrackingStorePerfSuite extends SparkFunSuite {
 
         tracking.view(classOf[ExecutorStageSummaryWrapper])
           .asScala
-          .toSeq
           .foreach { e =>
             if (stageKeys.contains(stageKey(e.stageId, e.stageAttemptId))) {
               tracking.delete(e.getClass(), e.id)
