@@ -130,5 +130,5 @@ public interface KVStore extends Closeable {
   /**
    * A cheaper way to remove multiple items from the KVStore
    */
-  abstract <T> boolean removeIf(Class<T> type, Predicate<? super T> filter) throws Exception;
+  <T> boolean removeIf(Class<T> type, Predicate<? super T> filter) throws Exception;
 }
