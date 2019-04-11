@@ -22,10 +22,10 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -158,6 +158,30 @@ public class InMemoryStore implements KVStore {
 
   private static class InstanceList<T> {
 
+    private static class CountingRemoveIfForEach<T> implements BiConsumer<Comparable<Object>, T> {
+      ConcurrentMap<Comparable<Object>, T> data;
+      Predicate<? super T> filter;
+      int count = 0;
+
+      CountingRemoveIfForEach(
+          ConcurrentMap<Comparable<Object>, T> data,
+          Predicate<? super T> filter) {
+        this.data = data;
+        this.filter = filter;
+      }
+
+      public void accept(Comparable<Object> key, T value) {
+        // To address https://bugs.openjdk.java.net/browse/JDK-8078645 which affects remove() on
+        // all iterators of concurrent maps, and specifically makes countingRemoveIf difficult to
+        // implement correctly against the values() iterator, we use forEach instead....
+        if (filter.test(value)) {
+          if (data.remove(key, value)) {
+            count++;
+          }
+        }
+      }
+    }
+
     private final KVTypeInfo ti;
     private final KVTypeInfo.Accessor naturalKey;
     private final ConcurrentMap<Comparable<Object>, T> data;
@@ -173,18 +197,9 @@ public class InMemoryStore implements KVStore {
     }
 
     int countingRemoveIf(Predicate<? super T> filter) {
-      int[] count = new int[1];
-      data.forEach((key, val) -> {
-        // To address https://bugs.openjdk.java.net/browse/JDK-8078645 which affects remove() on
-        // all iterators of concurrent maps, and specifically makes countingRemoveIf difficult to
-        // implement correctly against the values() iterator, we use forEach instead....
-        if (filter.test(val)) {
-          if (data.remove(key, val)) {
-            count[0] += 1;
-          }
-        }
-      });
-      return count[0];
+      CountingRemoveIfForEach<T> callback = new CountingRemoveIfForEach<T>(data, filter);
+      data.forEach(callback);
+      return callback.count;
     }
 
     public T get(Object key) {
