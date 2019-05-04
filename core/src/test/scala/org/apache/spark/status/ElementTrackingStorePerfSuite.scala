@@ -25,7 +25,7 @@ import org.apache.spark.util.Utils
 import org.apache.spark.util.kvstore._
 
 class ElementTrackingStorePerfSuite extends SparkFunSuite {
-  val useLevelDB = false
+  val useLevelDB = true
 
   import config._
 
@@ -160,29 +160,6 @@ class ElementTrackingStorePerfSuite extends SparkFunSuite {
     }
   }
 
-  test("Long index n^2logn") {
-    setup { tracking =>
-      perfTest(tracking) {
-        val stages = tracking.view(classOf[StageDataWrapper]).asScala
-
-        stages.foreach { s =>
-          val key = StageDataWrapper.asLongKey(s.info.stageId, s.info.attemptId)
-
-          tracking.delete(s.getClass, key)
-
-          tracking.view(classOf[ExecutorStageSummaryWrapper])
-            .index("stageAsLong")
-            .first(key)
-            .last(key)
-            .asScala
-            .foreach { e =>
-              tracking.delete(e.getClass, e.id)
-            }
-        }
-      }
-    }
-  }
-
   test("slightly faster n^2[logn]") {
     setup { tracking =>
       perfTest(tracking) {
@@ -206,92 +183,23 @@ class ElementTrackingStorePerfSuite extends SparkFunSuite {
     }
   }
 
-  test("faster nlogn") {
-    setup { tracking =>
-      perfTest(tracking) {
-        val stages = tracking.view(classOf[StageDataWrapper]).asScala
-
-        val stageKeys = stages.map { s =>
-          val key = Array(s.info.stageId, s.info.attemptId)
-
-          tracking.delete(s.getClass, key)
-
-          StageDataWrapper.asLongKey(s.info.stageId, s.info.attemptId)
-        }.toSet
-
-        tracking.view(classOf[ExecutorStageSummaryWrapper])
-          .asScala
-          .foreach { e =>
-            if (stageKeys.contains(StageDataWrapper.asLongKey(e.stageId, e.stageAttemptId))) {
-              tracking.delete(e.getClass, e.id)
-            }
-          }
-      }
-    }
-  }
-
-  test("fastest n") {
-    setup { tracking =>
-      perfTest(tracking) {
-        val stages = tracking.view(classOf[StageDataWrapper]).asScala
-
-        val stageKeys = stages.map { s =>
-          val key = Array(s.info.stageId, s.info.attemptId)
-
-          tracking.delete(s.getClass, key)
-
-          StageDataWrapper.asLongKey(s.info.stageId, s.info.attemptId)
-        }.toSet
-
-        tracking.countingRemoveIf(
-          classOf[ExecutorStageSummaryWrapper],
-          {
-            e: ExecutorStageSummaryWrapper =>
-              stageKeys.contains(StageDataWrapper.asLongKey(e.stageId, e.stageAttemptId))
-          })
-      }
-    }
-  }
-
-  test("fastest n staged") {
-    setup { tracking =>
-      perfTest(tracking) {
-        val allStages = tracking.view(classOf[StageDataWrapper]).asScala
-
-        allStages.grouped(allStages.size / 30).foreach { stages =>
-          val stageKeys = stages.map { s =>
-            val key = Array(s.info.stageId, s.info.attemptId)
-
-            tracking.delete(s.getClass, key)
-
-            StageDataWrapper.asLongKey(s.info.stageId, s.info.attemptId)
-          }.toSet
-
-          tracking.countingRemoveIf(
-            classOf[ExecutorStageSummaryWrapper],
-            {
-              e: ExecutorStageSummaryWrapper =>
-                stageKeys.contains(StageDataWrapper.asLongKey(e.stageId, e.stageAttemptId))
-            })
-        }
-      }
-    }
-  }
-
   test("fastest n removeAllByKeys") {
     setup { tracking =>
       perfTest(tracking) {
         val stages = tracking.view(classOf[StageDataWrapper]).asScala
 
+        assert(tracking.count(classOf[ExecutorStageSummaryWrapper]) > 0)
         val stageKeys = stages.map { s =>
           val key = Array(s.info.stageId, s.info.attemptId)
 
           tracking.delete(s.getClass, key)
 
-          StageDataWrapper.asLongKey(s.info.stageId, s.info.attemptId)
+          key
         }
 
-        tracking.removeAllByKeys(classOf[ExecutorStageSummaryWrapper], "stageAsLong", stageKeys)
+        tracking.removeAllByKeys(classOf[ExecutorStageSummaryWrapper], "stage", stageKeys)
+
+        assert(tracking.count(classOf[ExecutorStageSummaryWrapper]) == 0)
       }
     }
   }
@@ -308,55 +216,11 @@ class ElementTrackingStorePerfSuite extends SparkFunSuite {
 
             tracking.delete(s.getClass, key)
 
-            StageDataWrapper.asLongKey(s.info.stageId, s.info.attemptId)
-          }
-
-          tracking.removeAllByKeys(classOf[ExecutorStageSummaryWrapper], "stageAsLong", stageKeys)
-        }
-
-        assert(tracking.count(classOf[ExecutorStageSummaryWrapper]) == 0)
-      }
-    }
-  }
-
-  test("slower n removeAllByKeys staged") {
-    setup { tracking =>
-      perfTest(tracking) {
-        val allStages = tracking.view(classOf[StageDataWrapper]).asScala
-
-        assert(tracking.count(classOf[ExecutorStageSummaryWrapper]) > 0)
-        allStages.grouped(allStages.size / 30).foreach { stages =>
-          val stageKeys = stages.map { s =>
-            val key = Array(s.info.stageId, s.info.attemptId)
-
-            tracking.delete(s.getClass, key)
-
             key
           }
 
           tracking.removeAllByKeys(classOf[ExecutorStageSummaryWrapper], "stage", stageKeys)
         }
-
-        assert(tracking.count(classOf[ExecutorStageSummaryWrapper]) == 0)
-      }
-    }
-  }
-
-  test("slower n removeAllByKeys") {
-    setup { tracking =>
-      perfTest(tracking) {
-        val stages = tracking.view(classOf[StageDataWrapper]).asScala
-
-        assert(tracking.count(classOf[ExecutorStageSummaryWrapper]) > 0)
-        val stageKeys = stages.map { s =>
-          val key = Array(s.info.stageId, s.info.attemptId)
-
-          tracking.delete(s.getClass, key)
-
-          key
-        }
-
-        tracking.removeAllByKeys(classOf[ExecutorStageSummaryWrapper], "stage", stageKeys)
 
         assert(tracking.count(classOf[ExecutorStageSummaryWrapper]) == 0)
       }
