@@ -123,9 +123,7 @@ public class InMemoryStore implements KVStore {
     InstanceList<T> list = inMemoryLists.get(type);
 
     if (list != null) {
-      Set keySet = (keys instanceof Set) ? (Set)keys : new HashSet(keys);
-
-      return list.countingRemoveIfByKey(index, keySet::contains) > 0;
+      return list.countingRemoveIfByKey(index, keys) > 0;
     } else {
       return false;
     }
@@ -220,10 +218,9 @@ public class InMemoryStore implements KVStore {
     }
 
     @SuppressWarnings("unchecked")
-    int countingRemoveIfByKey(String index, Predicate keyFilter) {
-      KVTypeInfo.Accessor getter = index != null ? ti.getAccessor(index) : null;
-      Predicate<? super T> filter =
-        getter != null ? ((value) -> keyFilter.test(keyFromValue(value, getter))) : keyFilter;
+    int countingRemoveIfByKey(String index, Collection keys) {
+      KVTypeInfo.Accessor getter = ti.getAccessor(index);
+      Predicate<? super T> filter = getPredicate(getter, keys);
 
       CountingRemoveIfForEach<T> callback = new CountingRemoveIfForEach<>(data, filter);
       data.forEach(callback);
@@ -251,9 +248,26 @@ public class InMemoryStore implements KVStore {
       return new InMemoryView<>(data.values(), ti);
     }
 
-    private static Comparable<Object> keyFromValue(Object value, KVTypeInfo.Accessor getter) {
+    @SuppressWarnings("unchecked")
+    private static <T> Predicate<? super T> getPredicate(
+        KVTypeInfo.Accessor getter,
+        Collection keys) {
+      if (Comparable.class.isAssignableFrom(getter.getType())) {
+        HashSet set = new HashSet(keys);
+
+        return (value) -> set.contains(keyFromValue(getter, value));
+      } else {
+        HashSet<Comparable> set = new HashSet<>(keys.size());
+        for (Object key : keys) {
+          set.add(asKey(key));
+        }
+        return (value) -> set.contains(asKey(keyFromValue(getter, value)));
+      }
+    }
+
+    private static Object keyFromValue(KVTypeInfo.Accessor getter, Object value) {
       try {
-        return asKey(getter.get(value));
+        return getter.get(value);
       } catch (Exception e) {
         throw Throwables.propagate(e);
       }

@@ -159,8 +159,8 @@ private[spark] class ElementTrackingStore(store: KVStore, conf: SparkConf) exten
   override def countingRemoveIf[T](klass: Class[T], filter: Predicate[_ >: T]): Int =
     store.countingRemoveIf[T](klass, filter)
 
-  def removeAllByKeys[T](klass: Class[T], index: String, keys: Set[_]): Boolean =
-    removeAllByKeys(klass, index, keys.asJava)
+  def removeAllByKeys[T](klass: Class[T], index: String, keys: Iterable[_]): Boolean =
+    removeAllByKeys(klass, index, keys.asJavaCollection)
 
   override def removeAllByKeys[T](klass: Class[T], index: String, keys: Collection[_]): Boolean =
     store.removeAllByKeys(klass, index, keys)

@@ -994,13 +994,13 @@ private[spark] class AppStatusListener(
       }
 
       cleanupCachedQuantiles(key)
-      StageDataWrapper.asLongKey(s.info.stageId, s.info.attemptId)
-    }.toSet
+      key
+    }
 
     // Delete summaries in one pass, as deleting them for each stage is slow
     val totalSummariesDeleted = kvstore.removeAllByKeys(
       classOf[ExecutorStageSummaryWrapper],
-      "stageAsLong",
+      "stage",
       stageKeys)
 
     logDebug(s"Removed $totalSummariesDeleted summaries")
@@ -1008,7 +1008,7 @@ private[spark] class AppStatusListener(
     // Delete tasks for all stages in one pass, as deleting them for each stage individually is slow
     kvstore.removeAllByKeys(
       classOf[TaskDataWrapper],
-      TaskIndexNames.STAGE_AS_LONG,
+      TaskIndexNames.STAGE,
       stageKeys)
   }
 

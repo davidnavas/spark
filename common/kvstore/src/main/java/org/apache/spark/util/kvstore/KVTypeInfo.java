@@ -124,6 +124,7 @@ public class KVTypeInfo {
 
     Object get(Object instance) throws Exception;
 
+    Class getType();
   }
 
   private class FieldAccessor implements Accessor {
@@ -139,6 +140,10 @@ public class KVTypeInfo {
       return field.get(instance);
     }
 
+    @Override
+    public Class getType() {
+      return field.getType();
+    }
   }
 
   private class MethodAccessor implements Accessor {
@@ -154,6 +159,10 @@ public class KVTypeInfo {
       return method.invoke(instance);
     }
 
+    @Override
+    public Class getType() {
+      return method.getReturnType();
+    }
   }
 
 }
