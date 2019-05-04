@@ -45,7 +45,7 @@ class ElementTrackingStorePerfSuite extends SparkFunSuite {
   }
 
   def initializeData(): ElementData = {
-    val count = 1000
+    val count = 10000
     val strings = (0 to 4).map { _.toString }
 
     val stages =
@@ -289,7 +289,7 @@ class ElementTrackingStorePerfSuite extends SparkFunSuite {
           tracking.delete(s.getClass, key)
 
           StageDataWrapper.asLongKey(s.info.stageId, s.info.attemptId)
-        }.toSet
+        }
 
         tracking.removeAllByKeys(classOf[ExecutorStageSummaryWrapper], "stageAsLong", stageKeys)
       }
@@ -309,10 +309,54 @@ class ElementTrackingStorePerfSuite extends SparkFunSuite {
             tracking.delete(s.getClass, key)
 
             StageDataWrapper.asLongKey(s.info.stageId, s.info.attemptId)
-          }.toSet
+          }
 
           tracking.removeAllByKeys(classOf[ExecutorStageSummaryWrapper], "stageAsLong", stageKeys)
         }
+
+        assert(tracking.count(classOf[ExecutorStageSummaryWrapper]) == 0)
+      }
+    }
+  }
+
+  test("slower n removeAllByKeys staged") {
+    setup { tracking =>
+      perfTest(tracking) {
+        val allStages = tracking.view(classOf[StageDataWrapper]).asScala
+
+        assert(tracking.count(classOf[ExecutorStageSummaryWrapper]) > 0)
+        allStages.grouped(allStages.size / 30).foreach { stages =>
+          val stageKeys = stages.map { s =>
+            val key = Array(s.info.stageId, s.info.attemptId)
+
+            tracking.delete(s.getClass, key)
+
+            key
+          }
+
+          tracking.removeAllByKeys(classOf[ExecutorStageSummaryWrapper], "stage", stageKeys)
+        }
+
+        assert(tracking.count(classOf[ExecutorStageSummaryWrapper]) == 0)
+      }
+    }
+  }
+
+  test("slower n removeAllByKeys") {
+    setup { tracking =>
+      perfTest(tracking) {
+        val stages = tracking.view(classOf[StageDataWrapper]).asScala
+
+        assert(tracking.count(classOf[ExecutorStageSummaryWrapper]) > 0)
+        val stageKeys = stages.map { s =>
+          val key = Array(s.info.stageId, s.info.attemptId)
+
+          tracking.delete(s.getClass, key)
+
+          key
+        }
+
+        tracking.removeAllByKeys(classOf[ExecutorStageSummaryWrapper], "stage", stageKeys)
 
         assert(tracking.count(classOf[ExecutorStageSummaryWrapper]) == 0)
       }
