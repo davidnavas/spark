@@ -17,12 +17,7 @@
 
 package org.apache.spark.util.kvstore;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
-import java.util.NoSuchElementException;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.BiConsumer;
@@ -123,6 +118,20 @@ public class InMemoryStore implements KVStore {
   }
 
   @SuppressWarnings("unchecked")
+  @Override
+  public <T> boolean removeAllByKeys(Class<T> type, String index, Collection keys) {
+    InstanceList<T> list = inMemoryLists.get(type);
+
+    if (list != null) {
+      Set keySet = (keys instanceof Set) ? (Set)keys : new HashSet(keys);
+
+      return list.countingRemoveIfByKey(index, keySet::contains) > 0;
+    } else {
+      return false;
+    }
+  }
+
+  @SuppressWarnings("unchecked")
   private static Comparable<Object> asKey(Object in) {
     if (in.getClass().isArray()) {
       in = ArrayWrappers.forArray(in);
@@ -210,6 +219,17 @@ public class InMemoryStore implements KVStore {
       return callback.count;
     }
 
+    @SuppressWarnings("unchecked")
+    int countingRemoveIfByKey(String index, Predicate keyFilter) {
+      KVTypeInfo.Accessor getter = index != null ? ti.getAccessor(index) : null;
+      Predicate<? super T> filter =
+        getter != null ? ((value) -> keyFilter.test(keyFromValue(value, getter))) : keyFilter;
+
+      CountingRemoveIfForEach<T> callback = new CountingRemoveIfForEach<>(data, filter);
+      data.forEach(callback);
+      return callback.count;
+    }
+
     public T get(Object key) {
       return data.get(asKey(key));
     }
@@ -231,6 +251,13 @@ public class InMemoryStore implements KVStore {
       return new InMemoryView<>(data.values(), ti);
     }
 
+    private static Comparable<Object> keyFromValue(Object value, KVTypeInfo.Accessor getter) {
+      try {
+        return asKey(getter.get(value));
+      } catch (Exception e) {
+        throw Throwables.propagate(e);
+      }
+    }
   }
 
   private static class InMemoryView<T> extends KVStoreView<T> {

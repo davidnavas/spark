@@ -99,6 +99,12 @@ private[spark] class StageDataWrapper(
   private def completionTime: Long = info.completionTime.map(_.getTime).getOrElse(-1L)
 }
 
+private[spark] object StageDataWrapper {
+  // Note: implementation assumes stageId and attemptId are positive numbers
+  def asLongKey(stageId: Int, attemptId: Int): Long =
+    stageId.toLong << 32 | attemptId
+}
+
 /**
  * Tasks have a lot of indices that are used in a few different places. This object keeps logical
  * names for these indices, mapped to short strings to save space when using a disk store.
@@ -140,6 +146,7 @@ private[spark] object TaskIndexNames {
   final val SHUFFLE_WRITE_SIZE = "sws"
   final val SHUFFLE_WRITE_TIME = "swt"
   final val STAGE = "stage"
+  final val STAGE_AS_LONG = "stgL"
   final val STATUS = "sta"
   final val TASK_INDEX = "idx"
   final val COMPLETION_TIME = "ct"
@@ -292,6 +299,9 @@ private[spark] class TaskDataWrapper(
   @JsonIgnore @KVIndex(TaskIndexNames.STAGE)
   private def stage: Array[Int] = Array(stageId, stageAttemptId)
 
+  @JsonIgnore @KVIndex(TaskIndexNames.STAGE_AS_LONG)
+  private def stageAsLong: Long = StageDataWrapper.asLongKey(stageId, stageAttemptId)
+
   @JsonIgnore @KVIndex(value = TaskIndexNames.SCHEDULER_DELAY, parent = TaskIndexNames.STAGE)
   def schedulerDelay: Long = {
     if (hasMetrics) {
@@ -372,6 +382,9 @@ private[spark] class ExecutorStageSummaryWrapper(
 
   @JsonIgnore @KVIndex("stage")
   private def stage: Array[Int] = Array(stageId, stageAttemptId)
+
+  @JsonIgnore @KVIndex("stageAsLong")
+  private def stageAsLong: Long = StageDataWrapper.asLongKey(stageId, stageAttemptId)
 
   @JsonIgnore
   def id: Array[Any] = _id

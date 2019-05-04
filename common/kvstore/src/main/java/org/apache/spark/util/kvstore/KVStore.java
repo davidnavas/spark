@@ -18,6 +18,7 @@
 package org.apache.spark.util.kvstore;
 
 import java.io.Closeable;
+import java.util.Collection;
 import java.util.function.Predicate;
 
 import org.apache.spark.annotation.Private;
@@ -131,4 +132,6 @@ public interface KVStore extends Closeable {
    * A cheaper way to remove multiple items from the KVStore
    */
   <T> int countingRemoveIf(Class<T> type, Predicate<? super T> filter) throws Exception;
+  <T> boolean removeAllByKeys(Class<T> klass, String index, Collection keys) throws Exception;
+
 }
