@@ -107,16 +107,6 @@ public class InMemoryStore implements KVStore {
     inMemoryLists.clear();
   }
 
-  @Override
-  public <T> int countingRemoveIf(Class<T> type, Predicate<? super T> filter) {
-    InstanceList<T> list = inMemoryLists.get(type);
-
-    if (list != null) {
-      return list.countingRemoveIf(filter);
-    }
-    return 0;
-  }
-
   @SuppressWarnings("unchecked")
   @Override
   public <T> boolean removeAllByKeys(Class<T> type, String index, Collection keys) {
@@ -209,12 +199,6 @@ public class InMemoryStore implements KVStore {
 
     KVTypeInfo.Accessor getIndexAccessor(String indexName) {
       return ti.getAccessor(indexName);
-    }
-
-    int countingRemoveIf(Predicate<? super T> filter) {
-      CountingRemoveIfForEach<T> callback = new CountingRemoveIfForEach<>(data, filter);
-      data.forEach(callback);
-      return callback.count;
     }
 
     @SuppressWarnings("unchecked")
