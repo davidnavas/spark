@@ -25,7 +25,7 @@ import org.apache.spark.util.Utils
 import org.apache.spark.util.kvstore._
 
 class ElementTrackingStorePerfSuite extends SparkFunSuite {
-  val useLevelDB = true
+  val useLevelDB = false
 
   import config._
 
@@ -45,7 +45,7 @@ class ElementTrackingStorePerfSuite extends SparkFunSuite {
   }
 
   def initializeData(): ElementData = {
-    val count = 10000
+    val count = 1000
     val strings = (0 to 4).map { _.toString }
 
     val stages =
@@ -160,30 +160,7 @@ class ElementTrackingStorePerfSuite extends SparkFunSuite {
     }
   }
 
-  test("slightly faster n^2[logn]") {
-    setup { tracking =>
-      perfTest(tracking) {
-        val stages = tracking.view(classOf[StageDataWrapper]).asScala
-
-        stages.foreach { s =>
-          val key = Array(s.info.stageId, s.info.attemptId)
-
-          tracking.delete(s.getClass, key)
-
-          tracking.view(classOf[ExecutorStageSummaryWrapper])
-            .asScala
-            .filter { e =>
-              e.stageId == s.info.stageId && e.stageAttemptId == s.info.attemptId
-            }
-            .foreach { e =>
-              tracking.delete(e.getClass, e.id)
-            }
-        }
-      }
-    }
-  }
-
-  test("fastest n removeAllByKeys") {
+  test("removeAllByKeys") {
     setup { tracking =>
       perfTest(tracking) {
         val stages = tracking.view(classOf[StageDataWrapper]).asScala
@@ -204,7 +181,7 @@ class ElementTrackingStorePerfSuite extends SparkFunSuite {
     }
   }
 
-  test("fastest n removeAllByKeys staged") {
+  test("removeAllByKeys staged") {
     setup { tracking =>
       perfTest(tracking) {
         val allStages = tracking.view(classOf[StageDataWrapper]).asScala
