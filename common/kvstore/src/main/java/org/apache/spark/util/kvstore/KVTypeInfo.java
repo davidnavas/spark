@@ -37,7 +37,7 @@ public class KVTypeInfo {
   private final Map<String, KVIndex> indices;
   private final Map<String, Accessor> accessors;
 
-  public KVTypeInfo(Class<?> type) throws Exception {
+  public KVTypeInfo(Class<?> type) {
     this.type = type;
     this.accessors = new HashMap<>();
     this.indices = new HashMap<>();
@@ -122,7 +122,7 @@ public class KVTypeInfo {
    */
   interface Accessor {
 
-    Object get(Object instance) throws Exception;
+    Object get(Object instance) throws ReflectiveOperationException;
 
     Class getType();
   }
@@ -136,7 +136,7 @@ public class KVTypeInfo {
     }
 
     @Override
-    public Object get(Object instance) throws Exception {
+    public Object get(Object instance) throws ReflectiveOperationException {
       return field.get(instance);
     }
 
@@ -155,7 +155,7 @@ public class KVTypeInfo {
     }
 
     @Override
-    public Object get(Object instance) throws Exception {
+    public Object get(Object instance) throws ReflectiveOperationException {
       return method.invoke(instance);
     }
 

@@ -109,11 +109,11 @@ public class InMemoryStore implements KVStore {
 
   @SuppressWarnings("unchecked")
   @Override
-  public <T> boolean removeAllByKeys(Class<T> type, String index, Collection keys) {
-    InstanceList<T> list = inMemoryLists.get(type);
+  public <T> boolean removeAllByKeys(Class<T> klass, String index, Collection keys) {
+    InstanceList<T> list = inMemoryLists.get(klass);
 
     if (list != null) {
-      return list.countingRemoveIfByKey(index, keys) > 0;
+      return list.countingRemoveIfByKeys(index, keys) > 0;
     } else {
       return false;
     }
@@ -140,19 +140,14 @@ public class InMemoryStore implements KVStore {
     private ConcurrentMap<Class<?>, InstanceList<?>> data = new ConcurrentHashMap<>();
 
     @SuppressWarnings("unchecked")
-    public <T> InstanceList<T> get(Class<T> type) {
-      return (InstanceList<T>)data.get(type);
+    public <T> InstanceList<T> get(Class<T> key) {
+      return (InstanceList<T>)data.get(key);
     }
 
     @SuppressWarnings("unchecked")
     public <T> void write(T value) throws Exception {
-      InstanceList<T> list = (InstanceList<T>) data.computeIfAbsent(value.getClass(), key -> {
-        try {
-          return new InstanceList<>(key);
-        } catch (Exception e) {
-          throw Throwables.propagate(e);
-        }
-      });
+      InstanceList<T> list =
+        (InstanceList<T>) data.computeIfAbsent(value.getClass(), InstanceList::new);
       list.put(value);
     }
 
@@ -191,8 +186,8 @@ public class InMemoryStore implements KVStore {
     private final KVTypeInfo.Accessor naturalKey;
     private final ConcurrentMap<Comparable<Object>, T> data;
 
-    private InstanceList(Class<T> type) throws Exception {
-      this.ti = new KVTypeInfo(type);
+    private InstanceList(Class<T> klass) {
+      this.ti = new KVTypeInfo(klass);
       this.naturalKey = ti.getAccessor(KVIndex.NATURAL_INDEX_NAME);
       this.data = new ConcurrentHashMap<>();
     }
@@ -202,9 +197,8 @@ public class InMemoryStore implements KVStore {
     }
 
     @SuppressWarnings("unchecked")
-    int countingRemoveIfByKey(String index, Collection keys) {
-      KVTypeInfo.Accessor getter = ti.getAccessor(index);
-      Predicate<? super T> filter = getPredicate(getter, keys);
+    int countingRemoveIfByKeys(String index, Collection keys) {
+      Predicate<? super T> filter = getPredicate(ti.getAccessor(index), keys);
 
       CountingRemoveIfForEach<T> callback = new CountingRemoveIfForEach<>(data, filter);
       data.forEach(callback);
@@ -252,8 +246,8 @@ public class InMemoryStore implements KVStore {
     private static Object keyFromValue(KVTypeInfo.Accessor getter, Object value) {
       try {
         return getter.get(value);
-      } catch (Exception e) {
-        throw Throwables.propagate(e);
+      } catch (ReflectiveOperationException e) {
+        throw new RuntimeException(e);
       }
     }
   }
@@ -277,34 +271,30 @@ public class InMemoryStore implements KVStore {
         return new InMemoryIterator<>(elements.iterator());
       }
 
-      try {
-        KVTypeInfo.Accessor getter = index != null ? ti.getAccessor(index) : null;
-        int modifier = ascending ? 1 : -1;
+      KVTypeInfo.Accessor getter = index != null ? ti.getAccessor(index) : null;
+      int modifier = ascending ? 1 : -1;
 
-        final List<T> sorted = copyElements();
-        sorted.sort((e1, e2) -> modifier * compare(e1, e2, getter));
-        Stream<T> stream = sorted.stream();
+      final List<T> sorted = copyElements();
+      sorted.sort((e1, e2) -> modifier * compare(e1, e2, getter));
+      Stream<T> stream = sorted.stream();
 
-        if (first != null) {
-          stream = stream.filter(e -> modifier * compare(e, getter, first) >= 0);
-        }
-
-        if (last != null) {
-          stream = stream.filter(e -> modifier * compare(e, getter, last) <= 0);
-        }
-
-        if (skip > 0) {
-          stream = stream.skip(skip);
-        }
-
-        if (max < sorted.size()) {
-          stream = stream.limit((int) max);
-        }
-
-        return new InMemoryIterator<>(stream.iterator());
-      } catch (Exception e) {
-        throw Throwables.propagate(e);
+      if (first != null) {
+        stream = stream.filter(e -> modifier * compare(e, getter, first) >= 0);
       }
+
+      if (last != null) {
+        stream = stream.filter(e -> modifier * compare(e, getter, last) <= 0);
+      }
+
+      if (skip > 0) {
+        stream = stream.skip(skip);
+      }
+
+      if (max < sorted.size()) {
+        stream = stream.limit((int) max);
+      }
+
+      return new InMemoryIterator<>(stream.iterator());
     }
 
     /**
@@ -330,16 +320,16 @@ public class InMemoryStore implements KVStore {
           diff = compare(e1, natural, natural.get(e2));
         }
         return diff;
-      } catch (Exception e) {
-        throw Throwables.propagate(e);
+      } catch (ReflectiveOperationException e) {
+        throw new RuntimeException(e);
       }
     }
 
     private int compare(T e1, KVTypeInfo.Accessor getter, Object v2) {
       try {
         return asKey(getter.get(e1)).compareTo(asKey(v2));
-      } catch (Exception e) {
-        throw Throwables.propagate(e);
+      } catch (ReflectiveOperationException e) {
+        throw new RuntimeException(e);
       }
     }
 
